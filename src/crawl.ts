@@ -1,43 +1,60 @@
 import { JSDOM } from "jsdom";
+import { extractPageData, normalizeURL } from "./parse_html";
 
-export function normalizeURL(inputURL: string): string {
-  let formattedURL = inputURL;
-
-  if (inputURL.indexOf("://") == -1) {
-    formattedURL = `http://${formattedURL}`;
+export async function getHTML(url: string) {
+  const headers = new Headers();
+  headers.set("User-Agent", "BootCrawler/1.0");
+  let resp;
+  try {
+    resp = await fetch(url, {
+      headers: { "User-Agent": "BootCrawler/1.0" },
+    });
+  } catch (error) {
+    throw new Error(`Network error: ${error}`);
   }
-
-  const url = new URL(formattedURL);
-
-  let normalized = url.host;
-  if (url.pathname !== "/") {
-    normalized += url.pathname;
+  if (resp.status > 399) {
+    console.log(`error fetching url: ${resp.statusText}`);
+    return;
   }
-  if (normalized.endsWith("/")) {
-    normalized = normalized.substring(0, normalized.length - 1);
+  if (!resp.headers.get("content-type")?.includes("text/html")) {
+    console.log(
+      `expected content to be 'text/html' got '${resp.headers.get("content-type")}'`,
+    );
+    return;
   }
-
-  return normalized;
+  return resp.text();
 }
 
-export function getH1FromHTML(html: string): string {
-  const dom = new JSDOM(html);
-
-  const document = dom.window.document;
-  const h1El = document.querySelector("h1");
-  const textNode = h1El?.firstChild;
-  if (textNode != null && textNode != undefined) {
-    return textNode.nodeValue || "";
+export async function crawlPage(
+  baseURL: string,
+  currentURL: string = baseURL,
+  pages: Record<string, number> = {},
+) {
+  const normedBase = normalizeURL(baseURL);
+  const normedCurrent = normalizeURL(currentURL);
+  if (!normedCurrent.startsWith(normedBase)) {
+    return pages;
   }
-  return "";
-}
+  if (currentURL in pages) {
+    pages[normedCurrent] += 1;
+    return pages;
+  }
+  pages[normedCurrent] = 1;
 
-export function getFirstParagraphFromHTML(html: string): string {
-  const dom = new JSDOM(html);
-
-  const document = dom.window.document;
-  const mainEl = document.querySelector("main");
-  const p = mainEl?.querySelector("p") ?? document.querySelector("p");
-
-  return p?.textContent ?? "";
+  console.log(`Getting '${currentURL}`);
+  let html;
+  try {
+    html = await getHTML(currentURL);
+  } catch (error) {
+    console.log(`Failed to fetch ${currentURL}: ${error}`);
+    return pages;
+  }
+  if (html == undefined) {
+    return pages;
+  }
+  const page = extractPageData(html, currentURL);
+  for (const url of page.image_urls) {
+    pages = await crawlPage(baseURL, url, pages);
+  }
+  return pages;
 }
