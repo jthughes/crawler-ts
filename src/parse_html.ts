@@ -1,6 +1,9 @@
 import { JSDOM } from "jsdom";
 
 function urlToAbsolute(inputURL: string, baseURL: string): string {
+  const url = new URL(inputURL, baseURL);
+
+  return url.toString();
   if (inputURL.includes("://")) {
     return inputURL;
   }
@@ -22,7 +25,12 @@ export function getURLsFromHTML(html: string, baseURL: string): string[] {
     if (link === null) {
       continue;
     }
-    links.push(urlToAbsolute(link, baseURL));
+    try {
+      const absoluteURL = new URL(link, baseURL).toString();
+      links.push(absoluteURL);
+    } catch (error) {
+      console.error(`invalid src '${link}':`, error);
+    }
   }
   return links;
 }
@@ -39,7 +47,12 @@ export function getImagesFromHTML(html: string, baseURL: string): string[] {
     if (source === null) {
       continue;
     }
-    sources.push(urlToAbsolute(source, baseURL));
+    try {
+      const absoluteURL = new URL(source, baseURL).toString();
+      sources.push(absoluteURL);
+    } catch (error) {
+      console.error(`invalid src '${source}':`, error);
+    }
   }
   return sources;
 }
@@ -66,23 +79,14 @@ export function extractPageData(
 }
 
 export function normalizeURL(inputURL: string): string {
-  let formattedURL = inputURL;
+  const url = new URL(inputURL);
 
-  if (inputURL.indexOf("://") == -1) {
-    formattedURL = `http://${formattedURL}`;
+  let formattedURL = `${url.host}${url.pathname}`;
+
+  if (formattedURL.slice(-1) === "/") {
+    formattedURL = formattedURL.slice(0, -1);
   }
-
-  const url = new URL(formattedURL);
-
-  let normalized = url.host;
-  if (url.pathname !== "/") {
-    normalized += url.pathname;
-  }
-  if (normalized.endsWith("/")) {
-    normalized = normalized.substring(0, normalized.length - 1);
-  }
-
-  return normalized;
+  return formattedURL;
 }
 
 export function getH1FromHTML(html: string): string {
